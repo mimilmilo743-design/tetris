@@ -99,6 +99,12 @@
     appSettings.vibration = toggleVibration.checked;
     applyTheme();
     saveData();
+    
+    if (appSettings.music) {
+        if (running && !paused && !gameOver) AudioEngine.playMusic();
+    } else {
+        AudioEngine.pauseMusic();
+    }
   }
 
   function applyTheme() {
@@ -171,23 +177,109 @@
 
   [toggleTheme, toggleMusic, toggleSfx, toggleVibration].forEach(t => t.addEventListener('change', updateSettingsFromUI));
   resetDataBtn.addEventListener('click', resetAllData);
+  
+  document.addEventListener('click', (e) => {
+      if (e.target.closest('.btn') || e.target.closest('.icon-btn') || e.target.closest('.control-btn')) {
+          AudioEngine.playSound('click');
+      }
+  });
 
   // --- SISTEMA DE AUDIO Y VIBRACIÓN ---
   const AudioEngine = {
-    playMusic: function() {
-      if (!appSettings.music) return;
-      console.log("[Audio] Música espacial iniciada.");
+    bgMusic: new Audio('assets/audio/fondo.mp3'),
+    sfxFiles: {
+      'inicio': 'assets/audio/inicio.mp3',
+      'move': 'assets/audio/mover.mp3',
+      'rotate': 'assets/audio/rotar.mp3',
+      'drop': 'assets/audio/caida_rapida.mp3',
+      'line': 'assets/audio/eliminar_una_linea.mp3',
+      'level': 'assets/audio/subir_de_nivel.mp3',
+      'highscore': 'assets/audio/nuevo_record.mp3',
+      'gameover': 'assets/audio/game_over.mp3',
+      'click': 'assets/audio/boton_de_menu.mp3'
     },
-    stopMusic: function() { console.log("[Audio] Música detenida."); },
+    sfxCache: {},
+    targetVolume: 1.0,
+    currentVolume: 1.0,
+    volumeInterval: null,
+    unduckTimer: null,
+    isStoppingMusic: false,
+    init: function() {
+        this.bgMusic.loop = true;
+        for (const [key, path] of Object.entries(this.sfxFiles)) {
+            this.sfxCache[key] = new Audio(path);
+        }
+        // Bucle de transición suave de volumen
+        this.volumeInterval = setInterval(() => {
+            if (this.currentVolume !== this.targetVolume) {
+                const step = 0.05;
+                if (this.currentVolume < this.targetVolume) {
+                    this.currentVolume = Math.min(this.targetVolume, this.currentVolume + step);
+                } else {
+                    this.currentVolume = Math.max(this.targetVolume, this.currentVolume - step);
+                }
+                this.bgMusic.volume = this.currentVolume;
+            }
+        }, 50);
+    },
+    playMusic: function() {
+      if (!appSettings.music) {
+          this.pauseMusic();
+          return;
+      }
+      this.isStoppingMusic = false;
+      this.targetVolume = 1.0;
+      this.currentVolume = 1.0;
+      this.bgMusic.volume = 1.0;
+      this.bgMusic.play().catch(e => console.log("[Audio] Música bloqueada o no encontrada: " + e.message));
+    },
+    pauseMusic: function() { 
+      this.bgMusic.pause(); 
+    },
+    stopMusic: function() {
+      this.bgMusic.pause();
+      this.bgMusic.currentTime = 0;
+    },
+    duck: function(duration, stopAfter) {
+        if (!appSettings.music) return;
+        this.targetVolume = 0.15; // Bajar volumen (Ducking)
+        
+        // Priorizar el stop de game_over por encima de otros sonidos simultáneos
+        if (this.isStoppingMusic && !stopAfter) return; 
+        if (stopAfter) this.isStoppingMusic = true;
+
+        clearTimeout(this.unduckTimer);
+        this.unduckTimer = setTimeout(() => {
+            if (stopAfter || this.isStoppingMusic) {
+                this.stopMusic();
+                this.targetVolume = 1.0;
+                this.currentVolume = 1.0;
+                this.bgMusic.volume = 1.0;
+                this.isStoppingMusic = false;
+            } else {
+                this.targetVolume = 1.0; // Restaurar volumen suavemente
+            }
+        }, duration);
+    },
     playSound: function(type) {
-      if (!appSettings.sfx) return;
-      console.log(`[Audio] Efecto SFX: ${type}.wav reproducido.`);
+      if (!appSettings.sfx || !this.sfxCache[type]) return;
+      
+      // Activar Ducking en eventos importantes
+      if (['line', 'level', 'highscore', 'gameover'].includes(type)) {
+          let duckDur = 1500; // Duración por defecto
+          if (this.sfxCache[type].duration) duckDur = this.sfxCache[type].duration * 1000;
+          this.duck(duckDur, type === 'gameover');
+      }
+
+      const sound = this.sfxCache[type].cloneNode();
+      sound.play().catch(e => console.log(`[Audio] SFX ${type} bloqueado o no encontrado: ` + e.message));
     },
     vibrate: function(duration = 50) {
       if (!appSettings.vibration) return;
       if (navigator.vibrate) navigator.vibrate(duration);
     }
   };
+  AudioEngine.init();
 
   // --- CONSTANTES DEL JUEGO ---
   const COLS = 10, ROWS = 20, CELL = 24;
@@ -367,6 +459,7 @@
       if(newLevel !== level){
         level = newLevel;
         dropInterval = Math.max(100, 1000 - (level - 1) * 80);
+        AudioEngine.playSound('level');
       }
       updateHUD();
       requestRedraw();
@@ -538,6 +631,7 @@
     gameOverModal.classList.add('hidden');
     
     AudioEngine.playMusic();
+    AudioEngine.playSound('inicio');
     
     cancelAnimationFrame(animId);
     particles.length = 0; // Limpiar partículas
@@ -552,11 +646,11 @@
     // Acumular tiempo jugado
     appStats.timeSecs += Math.floor((Date.now() - gameStartTime) / 1000);
     
-    AudioEngine.stopMusic();
     AudioEngine.playSound('gameover');
     AudioEngine.vibrate(300);
     
     const isNewHigh = checkHighScore(score);
+    if (isNewHigh && score > 0) AudioEngine.playSound('highscore');
     saveData();
     
     goScore.textContent = score;
@@ -587,12 +681,14 @@
       // Acumular tiempo parcial al pausar
       appStats.timeSecs += Math.floor((Date.now() - gameStartTime) / 1000);
       saveData();
+      AudioEngine.pauseMusic();
     } else {
       overlay.classList.add('hidden');
       gameStartTime = Date.now(); // Reiniciar contador tras despausa
       lastTime = performance.now();
       requestRedraw();
       animId = requestAnimationFrame(update);
+      AudioEngine.playMusic();
     }
   }
 
