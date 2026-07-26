@@ -185,8 +185,28 @@
   });
 
   // --- SISTEMA DE AUDIO Y VIBRACIÓN ---
-  const AudioEngine = {
-    bgMusic: new Audio('assets/audio/fondo.mp3'),
+  //
+  // AudioManager: única fuente de verdad para la música de fondo.
+  //
+  // CAUSA RAÍZ DEL BUG ORIGINAL:
+  // HTMLMediaElement.play() es ASÍNCRONO (devuelve una Promise) mientras que
+  // .pause() es síncrono. El código anterior llamaba a play() y pause() sobre
+  // el mismo <audio> sin nunca esperar a que la Promise de play() se resolviera.
+  // Si stopMusic() (Game Over) se ejecutaba mientras un play() anterior seguía
+  // "en vuelo", y justo después startGame() volvía a llamar a play(), el
+  // navegador/WebView de Android podía dejar sonando el intento de reproducción
+  // antiguo Y arrancar el nuevo, sonando ambos a la vez. Repetido partida tras
+  // partida, esto se acumula ("dos, tres o más reproducciones simultáneas").
+  // Los parches anteriores solo añadían más llamadas a pause()/stop(), pero
+  // seguían sin resolver la carrera de fondo.
+  //
+  // SOLUCIÓN: serializar TODA orden de música (play/pause/stop) en una cola de
+  // promesas. Cada orden espera a que la anterior termine por completo antes de
+  // ejecutarse. Así es físicamente imposible que dos operaciones se pisen, y
+  // playMusic() además comprueba el estado real del audio antes de reproducir,
+  // por lo que nunca se dispara un segundo play() si ya está sonando.
+  const AudioManager = {
+    bgMusic: new Audio('assets/audio/fondo.mp3'), // ÚNICA instancia global de fondo.mp3 en toda la app
     sfxFiles: {
       'inicio': 'assets/audio/inicio.mp3',
       'move': 'assets/audio/mover.mp3',
@@ -203,13 +223,36 @@
     currentVolume: 1.0,
     volumeInterval: null,
     unduckTimer: null,
-    isStoppingMusic: false,
+
+    // Cola de operaciones de música. Todo playMusic/pauseMusic/stopMusic pasa
+    // por aquí, garantizando ejecución estrictamente secuencial.
+    _musicQueue: Promise.resolve(),
+
+    _enqueueMusicOp: function(taskFn) {
+      // Encadenamos siempre sobre la promesa anterior (se resuelva o falle),
+      // así un error nunca "rompe" la cola para las órdenes futuras.
+      this._musicQueue = this._musicQueue.then(taskFn, taskFn).catch(err => {
+        if (err && err.name !== 'AbortError') {
+          console.log('[Audio] ' + err.message);
+        }
+      });
+      return this._musicQueue;
+    },
+
     init: function() {
+        // Guarda defensiva: si por alguna razón init() se llamara dos veces,
+        // nunca queremos dos intervalos ni listeners duplicados.
+        if (this.volumeInterval) clearInterval(this.volumeInterval);
+        clearTimeout(this.unduckTimer);
+
         this.bgMusic.loop = true;
+        this.bgMusic.preload = 'auto';
+
         for (const [key, path] of Object.entries(this.sfxFiles)) {
             this.sfxCache[key] = new Audio(path);
         }
-        // Bucle de transición suave de volumen
+
+        // Bucle de transición suave de volumen (una sola vez, para siempre)
         this.volumeInterval = setInterval(() => {
             if (this.currentVolume !== this.targetVolume) {
                 const step = 0.05;
@@ -222,64 +265,92 @@
             }
         }, 50);
     },
+
+    // ¿Está sonando de verdad la música ahora mismo?
+    isMusicPlaying: function() {
+        return !this.bgMusic.paused && !this.bgMusic.ended;
+    },
+
     playMusic: function() {
-      if (!appSettings.music) {
-          this.pauseMusic();
-          return;
-      }
-      this.isStoppingMusic = false;
-      this.targetVolume = 1.0;
-      this.currentVolume = 1.0;
-      this.bgMusic.volume = 1.0;
-      this.bgMusic.play().catch(e => console.log("[Audio] Música bloqueada o no encontrada: " + e.message));
+      if (!appSettings.music) return;
+      this._enqueueMusicOp(async () => {
+        // GUARDA CLAVE: si ya está sonando, no volver a llamar a play().
+        // Esto por sí solo elimina el caso más común de solapamiento.
+        if (this.isMusicPlaying()) return;
+
+        this.targetVolume = 1.0;
+        this.currentVolume = 1.0;
+        this.bgMusic.volume = 1.0;
+        try { this.bgMusic.currentTime = 0; } catch(e) {}
+
+        await this.bgMusic.play();
+      });
     },
-    pauseMusic: function() { 
-      this.bgMusic.pause(); 
+
+    pauseMusic: function() {
+      this._enqueueMusicOp(async () => {
+        this.bgMusic.pause();
+      });
     },
+
     stopMusic: function() {
-      this.bgMusic.pause();
-      this.bgMusic.currentTime = 0;
+      clearTimeout(this.unduckTimer);
+      this.targetVolume = 1.0;
+      this._enqueueMusicOp(async () => {
+        // Al estar encolado, esto espera automáticamente a que cualquier
+        // play() previo en curso termine antes de pausar y reiniciar,
+        // eliminando la condición de carrera play()/pause().
+        this.bgMusic.pause();
+        try { this.bgMusic.currentTime = 0; } catch(e) {}
+      });
     },
-    duck: function(duration, stopAfter) {
+
+    duck: function(duration) {
         if (!appSettings.music) return;
-        this.targetVolume = 0.15; // Bajar volumen (Ducking)
-        
-        // Priorizar el stop de game_over por encima de otros sonidos simultáneos
-        if (this.isStoppingMusic && !stopAfter) return; 
-        if (stopAfter) this.isStoppingMusic = true;
+        this.targetVolume = 0.15; // Bajar volumen (Ducking temporal)
 
         clearTimeout(this.unduckTimer);
         this.unduckTimer = setTimeout(() => {
-            if (stopAfter || this.isStoppingMusic) {
-                this.stopMusic();
-                this.targetVolume = 1.0;
-                this.currentVolume = 1.0;
-                this.bgMusic.volume = 1.0;
-                this.isStoppingMusic = false;
-            } else {
-                this.targetVolume = 1.0; // Restaurar volumen suavemente
-            }
+            this.targetVolume = 1.0; // Restaurar volumen suavemente
         }, duration);
     },
+
     playSound: function(type) {
       if (!appSettings.sfx || !this.sfxCache[type]) return;
-      
-      // Activar Ducking en eventos importantes
-      if (['line', 'level', 'highscore', 'gameover'].includes(type)) {
+
+      // Activar Ducking en eventos importantes (excepto gameover)
+      if (['line', 'level', 'highscore'].includes(type)) {
           let duckDur = 1500; // Duración por defecto
           if (this.sfxCache[type].duration) duckDur = this.sfxCache[type].duration * 1000;
-          this.duck(duckDur, type === 'gameover');
+          this.duck(duckDur);
       }
 
+      // Los SFX cortos SÍ se clonan a propósito (para poder solaparse entre
+      // ellos, p.ej. mover + rotar), pero nunca se toca bgMusic aquí.
       const sound = this.sfxCache[type].cloneNode();
       sound.play().catch(e => console.log(`[Audio] SFX ${type} bloqueado o no encontrado: ` + e.message));
     },
+
     vibrate: function(duration = 50) {
       if (!appSettings.vibration) return;
       if (navigator.vibrate) navigator.vibrate(duration);
+    },
+
+    // Limpieza total del motor de audio (temporizadores + música).
+    // No es estrictamente necesaria en una SPA de una sola página, pero se
+    // deja lista por robustez ante futuros cambios de arquitectura.
+    destroy: function() {
+        clearInterval(this.volumeInterval);
+        clearTimeout(this.unduckTimer);
+        this.volumeInterval = null;
+        this.unduckTimer = null;
+        try { this.bgMusic.pause(); } catch(e) {}
     }
   };
-  AudioEngine.init();
+
+  // Alias de compatibilidad: el resto del archivo sigue usando "AudioEngine".
+  const AudioEngine = AudioManager;
+  AudioManager.init();
 
   // --- CONSTANTES DEL JUEGO ---
   const COLS = 10, ROWS = 20, CELL = 24;
@@ -608,6 +679,13 @@
       dropCounter = 0;
     }
     draw();
+
+    // Si handleGameOver() se disparó dentro de este mismo tick (a través de
+    // lockPiece -> spawn -> colisión), running ya es false: dibujamos el
+    // frame final y NO programamos un requestAnimationFrame más. Así nunca
+    // queda un bucle "fantasma" agendado tras el Game Over.
+    if(!running) return;
+
     animId = requestAnimationFrame(update);
   }
 
@@ -630,6 +708,7 @@
     overlay.classList.add('hidden');
     gameOverModal.classList.add('hidden');
     
+    AudioEngine.stopMusic();
     AudioEngine.playMusic();
     AudioEngine.playSound('inicio');
     
@@ -646,6 +725,7 @@
     // Acumular tiempo jugado
     appStats.timeSecs += Math.floor((Date.now() - gameStartTime) / 1000);
     
+    AudioEngine.stopMusic();
     AudioEngine.playSound('gameover');
     AudioEngine.vibrate(300);
     
