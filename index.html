@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#050510">
+<link rel="manifest" href="manifest.json">
+<title>Galaxy Blocks</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+
+<!-- Fondo animado Híbrido (CSS GPU) -->
+<div id="stars-bg"></div>
+
+<!-- Splash Screen -->
+<div id="splashScreen" class="splash-screen">
+  <div class="splash-title glow-text">GALAXY BLOCKS</div>
+  <div class="splash-loading">Iniciando sistema...</div>
+</div>
+
+<!-- Main Game Wrapper -->
+<div class="app-container">
+  
+  <div class="header-bar">
+    <div class="title glow-text">GALAXY BLOCKS</div>
+    <div class="header-actions">
+      <button class="icon-btn" id="commentsBtn" aria-label="Comentarios">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </button>
+      <button class="icon-btn" id="statsBtn" aria-label="Estadísticas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 15l-2 5-9-5 9-5 2 5z"></path>
+          <path d="M12 15l2 5 9-5-9-5-2 5z"></path>
+        </svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" aria-label="Configuración">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="board-frame neon-box">
+      <canvas id="board" width="240" height="480"></canvas>
+      
+      <!-- Inicio/Pausa Overlay -->
+      <div class="overlay" id="overlay">
+        <h2 class="glow-text">GALAXY BLOCKS</h2>
+        <p>Alinea los bloques de energía. Espacio para caída rápida.</p>
+        <button class="btn" id="startBtn">INICIAR</button>
+      </div>
+
+      <!-- Settings Modal -->
+      <div class="overlay hidden glass-modal" id="settingsModal">
+        <h2 class="modal-title glow-text">AJUSTES</h2>
+        
+        <div class="setting-row">
+          <span>Modo Claro</span>
+          <label class="switch">
+            <input type="checkbox" id="toggleTheme">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <span>Música</span>
+          <label class="switch">
+            <input type="checkbox" id="toggleMusic">
+            <span class="slider"></span>
+          </label>
+        </div>
+        
+        <div class="setting-row">
+          <span>Efectos SFX</span>
+          <label class="switch">
+            <input type="checkbox" id="toggleSfx">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <span>Vibración</span>
+          <label class="switch">
+            <input type="checkbox" id="toggleVibration">
+            <span class="slider"></span>
+          </label>
+        </div>
+        
+        <button class="btn btn-danger" id="resetDataBtn">BORRAR DATOS</button>
+        <button class="btn" id="closeSettingsBtn">VOLVER</button>
+      </div>
+
+      <!-- Stats Modal -->
+      <div class="overlay hidden glass-modal" id="statsModal">
+        <h2 class="modal-title glow-text">ESTADÍSTICAS</h2>
+        <div class="stats-box">
+          <div class="stat"><span>PARTIDAS</span> <strong id="stGames">0</strong></div>
+          <div class="stat"><span>LÍNEAS</span> <strong id="stLines">0</strong></div>
+          <div class="stat"><span>TIEMPO</span> <strong id="stTime">0m</strong></div>
+        </div>
+        <div class="achievements-box" id="achievementsList">
+          <!-- Logros se insertan aquí -->
+        </div>
+        <button class="btn" id="closeStatsBtn">CERRAR</button>
+      </div>
+
+      <!-- Modern Game Over Screen -->
+      <div class="overlay hidden glass-modal" id="gameOverModal">
+        <h2 class="modal-title" style="color: var(--danger); font-size: 24px; text-shadow: 0 0 10px var(--danger);">FIN DEL JUEGO</h2>
+        <div class="stats-box">
+          <div class="stat"><span>PUNTAJE</span> <strong id="goScore">0</strong></div>
+          <div class="stat"><span>LÍNEAS</span> <strong id="goLines">0</strong></div>
+          <div class="stat"><span>MEJOR</span> <strong id="goHighScore" style="color: var(--accent);">0</strong></div>
+        </div>
+        <button class="btn" id="playAgainBtn" style="font-size: 14px; padding: 14px 24px;">REINTENTAR</button>
+      </div>
+      
+      <!-- Comments Modal -->
+      <div class="overlay hidden glass-modal" id="commentsModal" style="display:flex; flex-direction:column; padding: 15px;">
+        <h2 class="modal-title glow-text" style="margin-bottom: 10px;">TRANSMISIONES</h2>
+        
+        <div id="commentsList" class="comments-list">
+            <div class="splash-loading" style="font-size:14px; margin-top:20px;">Estableciendo conexión...</div>
+        </div>
+        
+        <div class="comment-form">
+            <input type="text" id="commentName" placeholder="Tu Apodo (Ej: Piloto1)" maxlength="20">
+            <textarea id="commentText" placeholder="Escribe tu mensaje espacial..." rows="2" maxlength="200"></textarea>
+            <button class="btn" id="sendCommentBtn" style="padding: 10px; font-size:12px;">ENVIAR TRANSMISIÓN</button>
+        </div>
+
+        <button class="btn" id="closeCommentsBtn" style="margin-top: 10px; padding: 8px;">VOLVER</button>
+        
+        <!-- Botón secreto Admin -->
+        <div id="adminSecretBtn" style="text-align:center; margin-top:10px; cursor:pointer; opacity:0.3; padding: 5px;" aria-label="Admin">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+        </div>
+        
+        <!-- Login Admin Modal (Anidado u oculto) -->
+        <div id="adminLoginArea" class="hidden" style="margin-top: 10px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px;">
+            <h3 style="margin:0 0 10px 0; color:var(--danger); font-size:12px;">CONSOLA DEL SISTEMA (ADMIN)</h3>
+            <input type="email" id="adminEmail" placeholder="Correo">
+            <input type="password" id="adminPass" placeholder="Contraseña">
+            <button class="btn btn-danger" id="adminLoginBtn" style="margin-top:5px; padding: 8px; font-size:12px;">ACCEDER</button>
+            <button class="btn" id="adminLogoutBtn" style="margin-top:5px; padding: 8px; font-size:12px; display:none;">CERRAR SESIÓN</button>
+            <div id="adminError" style="color:var(--danger); font-size:12px; margin-top:5px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel neon-box">
+        <h3>SIGUIENTE</h3>
+        <canvas id="next" width="96" height="96"></canvas>
+      </div>
+
+      <div class="panel neon-box">
+        <h3>MEJOR</h3>
+        <div class="value" id="highScore" style="color: var(--c-O);">0</div>
+      </div>
+
+      <div class="panel neon-box">
+        <h3>PUNTAJE</h3>
+        <div class="value" id="score">0</div>
+      </div>
+
+      <div class="panel neon-box">
+        <h3>NIVEL</h3>
+        <div class="value" id="level">1</div>
+      </div>
+
+      <div class="panel neon-box">
+        <h3>LÍNEAS</h3>
+        <div class="value" id="lines">0</div>
+      </div>
+      
+      <div class="panel keys neon-box">
+        <div><b>&larr; &rarr;</b> Mover</div>
+        <div><b>&uarr;</b> Girar</div>
+        <div><b>&darr;</b> Bajar</div>
+        <div><b>ESPACIO</b> Caída</div>
+        <div><b>P</b> Pausa</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Controles Táctiles -->
+  <div class="mobile-controls">
+    <div class="dir-pad">
+      <div class="control-btn btn-left" id="btnLeft">&larr;</div>
+      <div class="control-btn btn-down" id="btnDown">&darr;</div>
+      <div class="control-btn btn-right" id="btnRight">&rarr;</div>
+    </div>
+    <div class="action-pad">
+      <div class="control-btn btn-drop" id="btnDrop">CAIDA</div>
+      <div class="control-btn btn-up" id="btnUp">&#8635;</div>
+    </div>
+  </div>
+
+  <div class="credit">Galaxy Blocks 1.0</div>
+
+  <!-- AdMob Banner Placeholder -->
+  <div id="adBannerPlaceholder" class="ad-banner-placeholder"></div>
+
+</div>
+
+<!-- Scripts -->
+<script src="admob.js"></script>
+<script src="script.js"></script>
+<script type="module" src="comments.js"></script>
+</body>
+</html>
