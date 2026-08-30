@@ -13,9 +13,15 @@ const firebaseConfig = {
   appId: "1:755869524254:web:3bdcbd87566f22738de90f"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+let db = null;
+let auth = null;
+
+try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+} catch (e) {
+    console.warn("Firebase falló al inicializar:", e);
+}
 
 export { db, auth };

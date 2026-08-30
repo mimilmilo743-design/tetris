@@ -1,5 +1,9 @@
 {
+  "scripts": {
+    "build": "mkdir www 2>nul & copy index.html www\\ & copy styles.css www\\ & copy script.js www\\ & copy comments.js www\\ & copy firebase_config.js www\\ & copy admob.js www\\ & copy manifest.json www\\ & xcopy assets www\\assets\\ /E /I /Y"
+  },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0"
   }

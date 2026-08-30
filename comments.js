@@ -6,10 +6,11 @@ import {
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js";
 
 // --- REFERENCIAS DOM ---
-const commentsBtn = document.getElementById('commentsBtn');
+const commentsFab = document.getElementById('commentsFab');
 const commentsModal = document.getElementById('commentsModal');
 const closeCommentsBtn = document.getElementById('closeCommentsBtn');
 const commentsList = document.getElementById('commentsList');
+const commentsStatus = document.getElementById('commentsStatus');
 const commentName = document.getElementById('commentName');
 const commentText = document.getElementById('commentText');
 const sendCommentBtn = document.getElementById('sendCommentBtn');
@@ -26,9 +27,7 @@ let isAdmin = false;
 let currentComments = [];
 
 // --- ABRIR / CERRAR MODAL ---
-commentsBtn.addEventListener('click', () => {
-    // Intentar pausar el juego simulando tecla P
-    document.dispatchEvent(new KeyboardEvent('keydown', { 'code': 'KeyP' }));
+commentsFab.addEventListener('click', () => {
     commentsModal.classList.remove('hidden');
 });
 
@@ -42,27 +41,34 @@ adminSecretBtn.addEventListener('click', () => {
 });
 
 // --- FIREBASE AUTH (Admin) ---
-onAuthStateChanged(auth, (user) => {
-    if (user) {
-        isAdmin = true;
-        adminLoginBtn.style.display = 'none';
-        adminLogoutBtn.style.display = 'inline-block';
-        adminEmail.style.display = 'none';
-        adminPass.style.display = 'none';
-        adminError.style.color = '#33ff88';
-        adminError.textContent = 'Autenticado como Admin';
-    } else {
-        isAdmin = false;
-        adminLoginBtn.style.display = 'inline-block';
-        adminLogoutBtn.style.display = 'none';
-        adminEmail.style.display = 'inline-block';
-        adminPass.style.display = 'inline-block';
-        adminError.textContent = '';
-    }
-    renderComments(); // Re-render para mostrar/ocultar botones de admin
-});
+try {
+    if (!auth) throw new Error("Firebase Auth no inicializado");
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            isAdmin = true;
+            adminLoginBtn.style.display = 'none';
+            adminLogoutBtn.style.display = 'inline-block';
+            adminEmail.style.display = 'none';
+            adminPass.style.display = 'none';
+            adminError.style.color = '#33ff88';
+            adminError.textContent = 'Autenticado como Admin';
+        } else {
+            isAdmin = false;
+            adminLoginBtn.style.display = 'inline-block';
+            adminLogoutBtn.style.display = 'none';
+            adminEmail.style.display = 'inline-block';
+            adminPass.style.display = 'inline-block';
+            adminError.textContent = '';
+        }
+        renderComments(); // Re-render para mostrar/ocultar botones de admin
+    });
+} catch(e) { console.warn("Firebase Auth no configurado correctamente.", e.message); }
 
 adminLoginBtn.addEventListener('click', () => {
+    if (!auth) {
+        adminError.textContent = 'Sistema de auth no disponible';
+        return;
+    }
     const email = adminEmail.value;
     const pass = adminPass.value;
     signInWithEmailAndPassword(auth, email, pass)
@@ -74,31 +80,56 @@ adminLoginBtn.addEventListener('click', () => {
 });
 
 adminLogoutBtn.addEventListener('click', () => {
-    signOut(auth);
+    if (auth) signOut(auth);
 });
 
 // --- FIREBASE FIRESTORE (Comentarios) ---
-const commentsRef = collection(db, "comments");
-const q = query(commentsRef, orderBy("timestamp", "desc"));
+try {
+    if (!db) throw new Error("Firestore no inicializado");
+    const commentsRef = collection(db, "comments");
+    const q = query(commentsRef, orderBy("timestamp", "desc"));
 
-onSnapshot(q, (snapshot) => {
-    currentComments = [];
-    snapshot.forEach((docSnap) => {
-        currentComments.push({ id: docSnap.id, ...docSnap.data() });
+    let isConnected = false;
+    setTimeout(() => {
+        if (!isConnected && commentsStatus) {
+            commentsStatus.textContent = "Firebase no responde. (Comprueba tu conexión o Reglas)";
+            commentsStatus.style.color = 'var(--danger)';
+        }
+    }, 5000);
+
+    onSnapshot(q, (snapshot) => {
+        isConnected = true;
+        if(commentsStatus) commentsStatus.style.display = 'none';
+        currentComments = [];
+        snapshot.forEach((docSnap) => {
+            currentComments.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        renderComments();
+    }, (error) => {
+        isConnected = true;
+        console.error("Error al cargar comentarios:", error);
+        if(commentsStatus) {
+            commentsStatus.textContent = "Sin conexión (Verifica tus Reglas de Firestore)";
+            commentsStatus.style.color = 'var(--danger)';
+        }
     });
-    renderComments();
-}, (error) => {
-    console.error("Error al cargar comentarios:", error);
-    commentsList.innerHTML = `<div class="splash-loading" style="color:var(--danger)">No se pudieron cargar las transmisiones. Asegúrate de configurar Firebase.</div>`;
-});
+} catch (e) {
+    if(commentsStatus) {
+        commentsStatus.textContent = "Sin conexión con la Base de Datos.";
+        commentsStatus.style.color = 'var(--danger)';
+    }
+    console.warn("Firestore no configurado correctamente.", e.message);
+}
 
 function renderComments() {
-    commentsList.innerHTML = '';
+    // Mantener status si existe y hay error, sino limpiar.
     if(currentComments.length === 0) {
         commentsList.innerHTML = '<div style="text-align:center; opacity:0.5; margin-top:20px;">No hay transmisiones. Sé el primero.</div>';
         return;
     }
-
+    
+    commentsList.innerHTML = ''; // Limpiar lista
+    
     currentComments.forEach(comment => {
         const div = document.createElement('div');
         div.className = 'comment-bubble';
@@ -148,11 +179,16 @@ sendCommentBtn.addEventListener('click', async () => {
         alert("Por favor escribe tu apodo y un mensaje.");
         return;
     }
+    if(!db) {
+        alert("Base de datos no conectada. Revisa la configuración de Firebase.");
+        return;
+    }
 
     sendCommentBtn.disabled = true;
     sendCommentBtn.textContent = 'ENVIANDO...';
 
     try {
+        const commentsRef = collection(db, "comments");
         await addDoc(commentsRef, {
             name: name,
             text: text,

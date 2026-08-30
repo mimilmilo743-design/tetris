@@ -210,7 +210,7 @@ body.light-theme .overlay { background: rgba(224, 229, 236, 0.9); }
   border: 1px solid rgba(255,255,255,0.05);
   border-radius: 8px;
 }
-.overlay.hidden{ display:none; }
+.hidden { display: none !important; }
 .overlay h2{
   font-family:'Press Start 2P', monospace;
   font-size:18px;
@@ -352,6 +352,33 @@ canvas#next{
 }
 
 /* Comments UI */
+.comments-fab {
+  position: fixed; bottom: 20px; right: 20px; width: 50px; height: 50px;
+  background: var(--accent); color: var(--bg); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,240,192,0.4); cursor: pointer;
+  z-index: 1000; transition: transform 0.2s;
+}
+.comments-fab:active { transform: scale(0.9); }
+.comments-panel {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 500px; height: 75vh; max-height: 600px;
+  background: rgba(5, 5, 16, 0.98); backdrop-filter: blur(10px);
+  border: 1px solid var(--grid-line); border-bottom: none;
+  border-radius: 20px 20px 0 0; z-index: 2000;
+  display: flex; flex-direction: column; padding: 15px;
+  box-shadow: 0 -5px 25px rgba(0,0,0,0.8);
+  transition: transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+.comments-panel.hidden { display: none !important; }
+.comments-panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--grid-line);
+}
+.close-btn {
+  background: none; border: none; color: var(--text);
+  font-size: 28px; line-height: 1; cursor: pointer; padding: 0;
+}
 .comments-list {
   flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--grid-line); border-radius: 8px;

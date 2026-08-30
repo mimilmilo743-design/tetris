@@ -199,16 +199,19 @@
       'click': 'assets/audio/boton_de_menu.mp3'
     },
     sfxCache: {},
+    activeClones: [],
     targetVolume: 1.0,
     currentVolume: 1.0,
     volumeInterval: null,
     unduckTimer: null,
+    sequenceTimers: [],
+    state: 'SILENT', // PLAYING, GAME_OVER, WAITING_SCORE, SHOWING_SCORE, SILENT, RESTARTING
+
     init: function() {
         this.bgMusic.loop = true;
         for (const [key, path] of Object.entries(this.sfxFiles)) {
             this.sfxCache[key] = new Audio(path);
         }
-        // Bucle de transición suave de volumen
         this.volumeInterval = setInterval(() => {
             if (this.currentVolume !== this.targetVolume) {
                 const step = 0.05;
@@ -221,48 +224,132 @@
             }
         }, 50);
     },
+
+    stopAllAudio: function() {
+        this.state = 'SILENT';
+        
+        // Cancelar todos los timers
+        clearTimeout(this.unduckTimer);
+        this.sequenceTimers.forEach(t => clearTimeout(t));
+        this.sequenceTimers = [];
+        
+        // Detener música de fondo
+        this.bgMusic.pause();
+        try { this.bgMusic.currentTime = 0; } catch(e){}
+        
+        // Detener SFX originales
+        for (const key in this.sfxCache) {
+            const audio = this.sfxCache[key];
+            audio.pause();
+            try { audio.currentTime = 0; } catch(e){}
+            audio.onended = null; // Limpiar callbacks viejos
+        }
+        
+        // Detener clones en ejecución
+        this.activeClones.forEach(clone => {
+            clone.pause();
+            clone.onended = null;
+        });
+        this.activeClones = [];
+        
+        this.targetVolume = 1.0;
+        this.currentVolume = 1.0;
+    },
+
     playMusic: function() {
-      // Detener cualquier reproducción previa para evitar superposición
-      this.stopMusic();
+      if (['GAME_OVER', 'WAITING_SCORE', 'SHOWING_SCORE', 'SILENT'].includes(this.state)) return;
       
+      this.stopMusic();
       if (!appSettings.music) return;
       
       this.targetVolume = 1.0;
       this.currentVolume = 1.0;
       this.bgMusic.volume = 1.0;
-      this.bgMusic.play().catch(e => console.log("[Audio] Música bloqueada o no encontrada: " + e.message));
+      this.bgMusic.play().catch(e => console.log("[Audio] Música bloqueada: " + e.message));
     },
+
     pauseMusic: function() { 
       this.bgMusic.pause(); 
     },
+
     stopMusic: function() {
       clearTimeout(this.unduckTimer);
       this.targetVolume = 1.0;
       this.bgMusic.pause();
       try { this.bgMusic.currentTime = 0; } catch(e){}
     },
+
     duck: function(duration) {
         if (!appSettings.music) return;
-        this.targetVolume = 0.15; // Bajar volumen (Ducking temporal)
+        this.targetVolume = 0.15;
         
         clearTimeout(this.unduckTimer);
         this.unduckTimer = setTimeout(() => {
-            this.targetVolume = 1.0; // Restaurar volumen suavemente
+            this.targetVolume = 1.0;
         }, duration);
     },
+
     playSound: function(type) {
       if (!appSettings.sfx || !this.sfxCache[type]) return;
       
-      // Activar Ducking en eventos importantes (excepto gameover)
+      // Prohibir efectos normales si el juego no está en PLAYING o RESTARTING
+      // Excepción para el 'click' de los botones en el menú
+      if (type !== 'click' && ['GAME_OVER', 'WAITING_SCORE', 'SHOWING_SCORE', 'SILENT'].includes(this.state)) {
+          return;
+      }
+      
       if (['line', 'level', 'highscore'].includes(type)) {
-          let duckDur = 1500; // Duración por defecto
+          let duckDur = 1500;
           if (this.sfxCache[type].duration) duckDur = this.sfxCache[type].duration * 1000;
           this.duck(duckDur);
       }
 
       const sound = this.sfxCache[type].cloneNode();
-      sound.play().catch(e => console.log(`[Audio] SFX ${type} bloqueado o no encontrado: ` + e.message));
+      this.activeClones.push(sound);
+      
+      sound.onended = () => {
+          const idx = this.activeClones.indexOf(sound);
+          if (idx > -1) this.activeClones.splice(idx, 1);
+      };
+      
+      sound.play().catch(e => console.log(`[Audio] SFX ${type} bloqueado: ` + e.message));
     },
+
+    triggerGameOverSequence: function(isNewHigh) {
+        this.stopAllAudio();
+        this.state = 'GAME_OVER';
+        
+        if (!appSettings.sfx) {
+            this.state = 'SILENT';
+            return;
+        }
+
+        const goAudio = this.sfxCache['gameover'];
+        goAudio.play().catch(e => {});
+
+        this.state = 'WAITING_SCORE';
+        
+        const timer1 = setTimeout(() => {
+            if (this.state !== 'WAITING_SCORE') return;
+            
+            if (isNewHigh) {
+                this.state = 'SHOWING_SCORE';
+                const hsAudio = this.sfxCache['highscore'];
+                hsAudio.onended = () => {
+                    // Silencio absoluto al terminar
+                    this.stopAllAudio();
+                };
+                hsAudio.play().catch(e => {
+                    this.stopAllAudio();
+                });
+            } else {
+                this.stopAllAudio();
+            }
+        }, 5000);
+        
+        this.sequenceTimers.push(timer1);
+    },
+
     vibrate: function(duration = 50) {
       if (!appSettings.vibration) return;
       if (navigator.vibrate) navigator.vibrate(duration);
@@ -601,6 +688,9 @@
   }
 
   function startGame(){
+    AudioEngine.stopAllAudio();
+    AudioEngine.state = 'RESTARTING';
+
     grid = newGrid();
     score = 0; level = 1; lines = 0;
     dropInterval = 1000;
@@ -619,7 +709,7 @@
     overlay.classList.add('hidden');
     gameOverModal.classList.add('hidden');
     
-    AudioEngine.stopMusic();
+    AudioEngine.state = 'PLAYING';
     AudioEngine.playMusic();
     AudioEngine.playSound('inicio');
     
@@ -636,13 +726,11 @@
     // Acumular tiempo jugado
     appStats.timeSecs += Math.floor((Date.now() - gameStartTime) / 1000);
     
-    AudioEngine.stopMusic();
-    AudioEngine.playSound('gameover');
-    AudioEngine.vibrate(300);
-    
     const isNewHigh = checkHighScore(score);
-    if (isNewHigh && score > 0) AudioEngine.playSound('highscore');
     saveData();
+    
+    AudioEngine.vibrate(300);
+    AudioEngine.triggerGameOverSequence(isNewHigh && score > 0);
     
     goScore.textContent = score;
     goLines.textContent = lines;
