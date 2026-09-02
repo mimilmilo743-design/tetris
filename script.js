@@ -101,9 +101,13 @@
     saveData();
     
     if (appSettings.music) {
-        if (running && !paused && !gameOver) AudioEngine.playMusic();
+        if (running && !paused && !gameOver) {
+            AudioEngine.playGameMusic();
+        } else {
+            AudioEngine.playBgMusic();
+        }
     } else {
-        AudioEngine.pauseMusic();
+        AudioEngine.pauseAllMusic();
     }
   }
 
@@ -178,7 +182,15 @@
   [toggleTheme, toggleMusic, toggleSfx, toggleVibration].forEach(t => t.addEventListener('change', updateSettingsFromUI));
   resetDataBtn.addEventListener('click', resetAllData);
   
+  let audioInitialized = false;
   document.addEventListener('click', (e) => {
+      if (!audioInitialized) {
+          audioInitialized = true;
+          // Si estamos en el menú, arranca música de fondo al primer toque
+          if (!running || paused || gameOver) {
+              AudioEngine.playBgMusic();
+          }
+      }
       if (e.target.closest('.btn') || e.target.closest('.icon-btn') || e.target.closest('.control-btn')) {
           AudioEngine.playSound('click');
       }
@@ -187,8 +199,8 @@
   // --- SISTEMA DE AUDIO Y VIBRACIÓN ---
   const AudioEngine = {
     bgMusic: new Audio('assets/audio/fondo.mp3'),
+    gameMusic: new Audio('assets/audio/inicio.mp3'), // Ahora tratado como música de juego en bucle
     sfxFiles: {
-      'inicio': 'assets/audio/inicio.mp3',
       'move': 'assets/audio/mover.mp3',
       'rotate': 'assets/audio/rotar.mp3',
       'drop': 'assets/audio/caida_rapida.mp3',
@@ -204,11 +216,11 @@
     currentVolume: 1.0,
     volumeInterval: null,
     unduckTimer: null,
-    sequenceTimers: [],
-    state: 'SILENT', // PLAYING, GAME_OVER, WAITING_SCORE, SHOWING_SCORE, SILENT, RESTARTING
-
+    musicTransitionTimer: null,
+    
     init: function() {
         this.bgMusic.loop = true;
+        this.gameMusic.loop = true; // Loop habilitado
         for (const [key, path] of Object.entries(this.sfxFiles)) {
             this.sfxCache[key] = new Audio(path);
         }
@@ -221,31 +233,28 @@
                     this.currentVolume = Math.max(this.targetVolume, this.currentVolume - step);
                 }
                 this.bgMusic.volume = this.currentVolume;
+                this.gameMusic.volume = this.currentVolume;
             }
         }, 50);
     },
 
     stopAllAudio: function() {
-        this.state = 'SILENT';
-        
-        // Cancelar todos los timers
         clearTimeout(this.unduckTimer);
-        this.sequenceTimers.forEach(t => clearTimeout(t));
-        this.sequenceTimers = [];
+        clearTimeout(this.musicTransitionTimer);
         
-        // Detener música de fondo
         this.bgMusic.pause();
         try { this.bgMusic.currentTime = 0; } catch(e){}
         
-        // Detener SFX originales
+        this.gameMusic.pause();
+        try { this.gameMusic.currentTime = 0; } catch(e){}
+        
         for (const key in this.sfxCache) {
             const audio = this.sfxCache[key];
             audio.pause();
             try { audio.currentTime = 0; } catch(e){}
-            audio.onended = null; // Limpiar callbacks viejos
+            audio.onended = null; 
         }
         
-        // Detener clones en ejecución
         this.activeClones.forEach(clone => {
             clone.pause();
             clone.onended = null;
@@ -256,27 +265,54 @@
         this.currentVolume = 1.0;
     },
 
-    playMusic: function() {
-      if (['GAME_OVER', 'WAITING_SCORE', 'SHOWING_SCORE', 'SILENT'].includes(this.state)) return;
-      
-      this.stopMusic();
-      if (!appSettings.music) return;
-      
-      this.targetVolume = 1.0;
-      this.currentVolume = 1.0;
-      this.bgMusic.volume = 1.0;
-      this.bgMusic.play().catch(e => console.log("[Audio] Música bloqueada: " + e.message));
+    playBgMusic: function() {
+        clearTimeout(this.musicTransitionTimer);
+        
+        // Detener gameMusic inmediatamente
+        this.gameMusic.pause();
+        try { this.gameMusic.currentTime = 0; } catch(e){}
+        
+        if (!appSettings.music) return;
+        
+        this.targetVolume = 1.0;
+        this.currentVolume = 1.0;
+        this.bgMusic.volume = 1.0;
+        
+        // Evitar duplicar reproducción si ya está sonando
+        if (this.bgMusic.paused) {
+            this.bgMusic.play().catch(e => console.log("[Audio] Fondo bloqueado: " + e.message));
+        }
     },
 
-    pauseMusic: function() { 
-      this.bgMusic.pause(); 
+    playGameMusic: function() {
+        clearTimeout(this.musicTransitionTimer);
+        
+        // Detener bgMusic y gameMusic inmediatamente
+        this.bgMusic.pause();
+        try { this.bgMusic.currentTime = 0; } catch(e){}
+        
+        this.gameMusic.pause();
+        try { this.gameMusic.currentTime = 0; } catch(e){}
+
+        if (!appSettings.music) return;
+        
+        this.targetVolume = 1.0;
+        this.currentVolume = 1.0;
+        this.gameMusic.volume = 1.0;
+
+        // Retraso exacto de 2 segundos (2000 ms) antes de iniciar música de juego
+        this.musicTransitionTimer = setTimeout(() => {
+            if (appSettings.music && running && !paused && !gameOver) {
+                this.gameMusic.play().catch(e => console.log("[Audio] Juego bloqueado: " + e.message));
+            }
+        }, 2000);
     },
 
-    stopMusic: function() {
-      clearTimeout(this.unduckTimer);
-      this.targetVolume = 1.0;
+    pauseAllMusic: function() {
+      // Detiene ambas músicas, usado cuando se silencia en Ajustes
+      clearTimeout(this.musicTransitionTimer);
       this.bgMusic.pause();
-      try { this.bgMusic.currentTime = 0; } catch(e){}
+      this.gameMusic.pause();
     },
 
     duck: function(duration) {
@@ -291,12 +327,6 @@
 
     playSound: function(type) {
       if (!appSettings.sfx || !this.sfxCache[type]) return;
-      
-      // Prohibir efectos normales si el juego no está en PLAYING o RESTARTING
-      // Excepción para el 'click' de los botones en el menú
-      if (type !== 'click' && ['GAME_OVER', 'WAITING_SCORE', 'SHOWING_SCORE', 'SILENT'].includes(this.state)) {
-          return;
-      }
       
       if (['line', 'level', 'highscore'].includes(type)) {
           let duckDur = 1500;
@@ -313,41 +343,6 @@
       };
       
       sound.play().catch(e => console.log(`[Audio] SFX ${type} bloqueado: ` + e.message));
-    },
-
-    triggerGameOverSequence: function(isNewHigh) {
-        this.stopAllAudio();
-        this.state = 'GAME_OVER';
-        
-        if (!appSettings.sfx) {
-            this.state = 'SILENT';
-            return;
-        }
-
-        const goAudio = this.sfxCache['gameover'];
-        goAudio.play().catch(e => {});
-
-        this.state = 'WAITING_SCORE';
-        
-        const timer1 = setTimeout(() => {
-            if (this.state !== 'WAITING_SCORE') return;
-            
-            if (isNewHigh) {
-                this.state = 'SHOWING_SCORE';
-                const hsAudio = this.sfxCache['highscore'];
-                hsAudio.onended = () => {
-                    // Silencio absoluto al terminar
-                    this.stopAllAudio();
-                };
-                hsAudio.play().catch(e => {
-                    this.stopAllAudio();
-                });
-            } else {
-                this.stopAllAudio();
-            }
-        }, 5000);
-        
-        this.sequenceTimers.push(timer1);
     },
 
     vibrate: function(duration = 50) {
@@ -689,7 +684,6 @@
 
   function startGame(){
     AudioEngine.stopAllAudio();
-    AudioEngine.state = 'RESTARTING';
 
     grid = newGrid();
     score = 0; level = 1; lines = 0;
@@ -709,9 +703,7 @@
     overlay.classList.add('hidden');
     gameOverModal.classList.add('hidden');
     
-    AudioEngine.state = 'PLAYING';
-    AudioEngine.playMusic();
-    AudioEngine.playSound('inicio');
+    AudioEngine.playGameMusic();
     
     cancelAnimationFrame(animId);
     particles.length = 0; // Limpiar partículas
@@ -730,7 +722,12 @@
     saveData();
     
     AudioEngine.vibrate(300);
-    AudioEngine.triggerGameOverSequence(isNewHigh && score > 0);
+    AudioEngine.playBgMusic(); // JUGANDO -> GAME OVER: detener juego, iniciar fondo
+    
+    AudioEngine.playSound('gameover');
+    if (isNewHigh && score > 0) {
+        setTimeout(() => AudioEngine.playSound('highscore'), 1500);
+    }
     
     goScore.textContent = score;
     goLines.textContent = lines;
@@ -760,14 +757,16 @@
       // Acumular tiempo parcial al pausar
       appStats.timeSecs += Math.floor((Date.now() - gameStartTime) / 1000);
       saveData();
-      AudioEngine.pauseMusic();
+      
+      AudioEngine.playBgMusic(); // JUGANDO -> PAUSA: fondo
     } else {
       overlay.classList.add('hidden');
       gameStartTime = Date.now(); // Reiniciar contador tras despausa
       lastTime = performance.now();
       requestRedraw();
       animId = requestAnimationFrame(update);
-      AudioEngine.playMusic();
+      
+      AudioEngine.playGameMusic(); // PAUSA -> CONTINUAR: juego
     }
   }
 
