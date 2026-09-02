@@ -171,12 +171,31 @@ function renderComments() {
     });
 }
 
+const commentNameDisplay = document.getElementById('commentNameDisplay');
+
+// Update nickname display when opening modal
+commentsFab.addEventListener('click', () => {
+    const savedName = localStorage.getItem('galaxy_nickname');
+    if (savedName) {
+        if(commentNameDisplay) commentNameDisplay.textContent = savedName;
+    } else {
+        if(commentNameDisplay) commentNameDisplay.textContent = "Anónimo";
+    }
+    commentsModal.classList.remove('hidden');
+});
+
 sendCommentBtn.addEventListener('click', async () => {
-    const name = commentName.value.trim();
+    const name = localStorage.getItem('galaxy_nickname');
     const text = commentText.value.trim();
 
-    if(!name || !text) {
-        alert("Por favor escribe tu apodo y un mensaje.");
+    if(!name) {
+        alert("Por favor registra tu apodo primero en la pantalla inicial o en Ajustes.");
+        commentsModal.classList.add('hidden');
+        return;
+    }
+
+    if(!text) {
+        alert("Por favor escribe un mensaje.");
         return;
     }
     if(!db) {
@@ -199,7 +218,7 @@ sendCommentBtn.addEventListener('click', async () => {
         alert("Error al enviar: " + e.message + "\n\n¿Configuraste Firebase y sus Reglas?");
     } finally {
         sendCommentBtn.disabled = false;
-        sendCommentBtn.textContent = 'ENVIAR TRANSMISIÓN';
+        sendCommentBtn.textContent = 'ENVIAR';
     }
 });
 

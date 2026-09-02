@@ -48,8 +48,31 @@
       <!-- Inicio/Pausa Overlay -->
       <div class="overlay" id="overlay">
         <h2 class="glow-text">GALAXY BLOCKS</h2>
-        <p>Alinea los bloques de energía. Espacio para caída rápida.</p>
-        <button class="btn" id="startBtn">INICIAR</button>
+
+        <div id="nicknameSection" style="margin-top: 15px; border: 1px solid var(--grid-line); padding: 15px; background: rgba(5,5,16,0.8); border-radius: 8px;">
+            <h3 class="glow-text" style="font-size: 14px; margin-bottom: 5px;">TU APODO</h3>
+            <p style="font-size: 10px; margin-bottom: 15px; color: var(--text-dim);">Ingresa tu apodo para guardar<br>tus récords en el ranking.</p>
+            <input type="text" id="playerNickname" placeholder="Escribe tu apodo..." maxlength="15" style="width: 100%; padding: 8px; margin-bottom: 10px; background: var(--bg); border: 1px solid var(--grid-line); color: var(--text); border-radius: 4px; font-family: inherit; font-size: 10px; outline: none; text-align: center;">
+            <button class="btn" id="saveNicknameBtn" style="font-size: 12px; padding: 10px 20px;">GUARDAR</button>
+            <div id="nicknameError" style="color: var(--danger); font-size: 10px; display: none; margin-top: 5px;"></div>
+        </div>
+
+        <div id="startSection" style="display: none; margin-top: 20px;">
+            <p style="font-size: 10px; margin-bottom: 15px;">Alinea los bloques de energía. Espacio para caída rápida.</p>
+            <button class="btn" id="startBtn" style="margin-bottom: 10px;">INICIAR</button>
+            <button class="btn" id="rankingMobileBtn" style="background: transparent; border: 1px solid var(--accent); color: var(--accent); font-size: 10px; padding: 8px 16px;">🏆 RANKING</button>
+        </div>
+      </div>
+
+      <!-- Ranking Mobile Modal -->
+      <div class="overlay hidden glass-modal" id="rankingModal">
+        <h2 class="modal-title glow-text" style="color: var(--accent);">RANKING TOP 10</h2>
+        <div class="ranking-header"><span>#</span> <span>APODO</span> <span>PUNTAJE</span></div>
+        <div class="ranking-list" id="rankingListMobile">
+           <!-- Items se inyectan por JS -->
+           <div class="splash-loading" style="font-size:12px; margin-top: 20px;">Conectando...</div>
+        </div>
+        <button class="btn" id="closeRankingBtn" style="margin-top: 15px; font-size: 12px; padding: 10px 20px;">CERRAR</button>
       </div>
 
       <!-- Settings Modal -->
@@ -88,6 +111,11 @@
           </label>
         </div>
         
+        <div class="setting-row" style="margin-top: 10px; border-top: 1px solid var(--grid-line); padding-top: 10px;">
+            <span>Cambiar Apodo</span>
+            <button class="btn" id="changeNicknameBtn" style="padding: 5px 10px; font-size: 10px;">CAMBIAR</button>
+        </div>
+
         <button class="btn btn-danger" id="resetDataBtn">BORRAR DATOS</button>
         <button class="btn" id="closeSettingsBtn">VOLVER</button>
       </div>
@@ -109,6 +137,7 @@
       <!-- Modern Game Over Screen -->
       <div class="overlay hidden glass-modal" id="gameOverModal">
         <h2 class="modal-title" style="color: var(--danger); font-size: 24px; text-shadow: 0 0 10px var(--danger);">FIN DEL JUEGO</h2>
+        <div id="newRecordAlert" style="display: none; color: #33ff88; font-size: 12px; margin-bottom: 10px; animation: pulse 1s infinite;">¡ENTRASTE AL RANKING!</div>
         <div class="stats-box">
           <div class="stat"><span>PUNTAJE</span> <strong id="goScore">0</strong></div>
           <div class="stat"><span>LÍNEAS</span> <strong id="goLines">0</strong></div>
@@ -118,7 +147,7 @@
       </div>
     </div>
 
-    <div class="side">
+    <div class="side center-panel">
       <div class="panel neon-box">
         <h3>SIGUIENTE</h3>
         <canvas id="next" width="96" height="96"></canvas>
@@ -150,6 +179,17 @@
         <div><b>&darr;</b> Bajar</div>
         <div><b>ESPACIO</b> Caída</div>
         <div><b>P</b> Pausa</div>
+      </div>
+    </div>
+    
+    <div class="side ranking-side" id="rankingSidePC">
+      <div class="panel neon-box ranking-panel">
+        <h3 style="color: var(--accent); margin-bottom: 15px; font-size: 12px;">🏆 RANKING GLOBAL</h3>
+        <div class="ranking-header"><span>#</span> <span>APODO</span> <span>PUNTAJE</span></div>
+        <div class="ranking-list" id="rankingListPC">
+           <!-- Items se inyectan por JS -->
+           <div class="splash-loading" style="font-size:12px; margin-top: 20px;">Conectando...</div>
+        </div>
       </div>
     </div>
 
@@ -185,7 +225,7 @@
 <!-- Floating Comments Panel -->
 <div id="commentsModal" class="comments-panel hidden">
   <div class="comments-panel-header">
-    <h2 class="glow-text" style="font-size: 14px; margin: 0;">TRANSMISIONES</h2>
+    <h2 class="glow-text" style="font-size: 14px; margin: 0;">COMENTARIOS</h2>
     <button id="closeCommentsBtn" class="close-btn">&times;</button>
   </div>
   
@@ -194,9 +234,10 @@
   </div>
   
   <div class="comment-form">
-      <input type="text" id="commentName" placeholder="Tu Apodo (Ej: Piloto1)" maxlength="20">
+      <div id="commentNameDisplayContainer" style="font-size: 12px; color: var(--accent); margin-bottom: 5px;">Comentando como: <strong id="commentNameDisplay"></strong></div>
+      <input type="text" id="commentName" style="display: none;">
       <textarea id="commentText" placeholder="Mensaje..." rows="2" maxlength="200"></textarea>
-      <button class="btn" id="sendCommentBtn" style="padding: 10px; font-size:12px;">ENVIAR TRANSMISIÓN</button>
+      <button class="btn" id="sendCommentBtn" style="padding: 10px; font-size:12px;">ENVIAR</button>
   </div>
 
   <!-- Botón secreto Admin -->
@@ -220,6 +261,7 @@
 
 <!-- Scripts -->
 <script src="admob.js"></script>
+<script type="module" src="ranking.js"></script>
 <script src="script.js"></script>
 <script type="module" src="comments.js"></script>
 </body>

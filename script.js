@@ -50,6 +50,18 @@
   const btnUp = document.getElementById('btnUp');
   const btnDrop = document.getElementById('btnDrop');
 
+  // Nickname & Ranking UI
+  const nicknameSection = document.getElementById('nicknameSection');
+  const startSection = document.getElementById('startSection');
+  const playerNicknameInput = document.getElementById('playerNickname');
+  const saveNicknameBtn = document.getElementById('saveNicknameBtn');
+  const nicknameError = document.getElementById('nicknameError');
+  const rankingMobileBtn = document.getElementById('rankingMobileBtn');
+  const rankingModal = document.getElementById('rankingModal');
+  const closeRankingBtn = document.getElementById('closeRankingBtn');
+  const changeNicknameBtn = document.getElementById('changeNicknameBtn');
+  const newRecordAlert = document.getElementById('newRecordAlert');
+
   // --- CONFIGURACIÓN Y PERSISTENCIA (localStorage) ---
   const DEFAULT_SETTINGS = { music: true, sfx: true, vibration: true, lightMode: false };
   let appSettings = { ...DEFAULT_SETTINGS };
@@ -58,6 +70,64 @@
   let appStats = { ...DEFAULT_STATS };
   
   let gameStartTime = 0;
+
+  // --- LÓGICA DE APODO ---
+  function validateNickname(name) {
+      if (!name || name.trim().length === 0) return "El apodo no puede estar vacío.";
+      if (name.trim().length > 15) return "Máximo 15 caracteres.";
+      if (/[<>&"']/.test(name)) return "Caracteres no permitidos.";
+      return null;
+  }
+
+  function setupNicknameUI() {
+      const savedName = localStorage.getItem('galaxy_nickname');
+      if (savedName) {
+          nicknameSection.style.display = 'none';
+          startSection.style.display = 'block';
+      } else {
+          nicknameSection.style.display = 'block';
+          startSection.style.display = 'none';
+      }
+  }
+
+  saveNicknameBtn.addEventListener('click', () => {
+      const name = playerNicknameInput.value.trim();
+      const err = validateNickname(name);
+      if (err) {
+          nicknameError.textContent = err;
+          nicknameError.style.display = 'block';
+      } else {
+          localStorage.setItem('galaxy_nickname', name);
+          nicknameError.style.display = 'none';
+          setupNicknameUI();
+          if (window.GalaxyRanking && window.GalaxyRanking.renderRanking) {
+             // force update if needed (although mostly handles it natively via reload or timeout)
+          }
+      }
+  });
+
+  changeNicknameBtn.addEventListener('click', () => {
+      settingsModal.classList.add('hidden');
+      if (running && !paused && !gameOver) {
+          togglePause();
+      } else if (gameOver) {
+          // If game over, just let it close settings, wait until they click play again?
+          // The easiest way is to let them see the overlay
+          gameOverModal.classList.add('hidden');
+          overlay.classList.remove('hidden');
+      }
+      localStorage.removeItem('galaxy_nickname');
+      playerNicknameInput.value = '';
+      setupNicknameUI();
+  });
+
+  rankingMobileBtn.addEventListener('click', () => {
+      rankingModal.classList.remove('hidden');
+  });
+
+  closeRankingBtn.addEventListener('click', () => {
+      rankingModal.classList.add('hidden');
+  });
 
   const ACHIEVEMENTS = [
     { id: 'first_game', name: 'Recluta Espacial', desc: 'Juega tu primera partida.', req: (s) => s.games >= 1 },
@@ -732,8 +802,15 @@
     goScore.textContent = score;
     goLines.textContent = lines;
     goHighScore.textContent = appStats.bestScore;
-    if (isNewHigh) goHighScore.style.color = '#33ff88';
-    else goHighScore.style.color = 'var(--accent)';
+    
+    newRecordAlert.style.display = 'none';
+    if (window.GalaxyRanking) {
+        window.GalaxyRanking.saveScore(score).then(isTop => {
+            if (isTop) {
+                newRecordAlert.style.display = 'block';
+            }
+        });
+    }
 
     AdMobManager.showInterstitial(() => {
         gameOverModal.classList.remove('hidden');
@@ -851,6 +928,7 @@
 
   // --- BOOTSTRAP ---
   loadData();
+  setupNicknameUI();
   initRenderCache();
   setupTouchControls();
 
